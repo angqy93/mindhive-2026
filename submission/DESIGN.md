@@ -94,7 +94,7 @@ We do not use an LLM. The reasons:
 3. Even a local LLM needs far more computation than embeddings.
 4. An LLM can invent an item code that does not exist.
 
-The one kind of line embeddings cannot handle is a reference to a past order, such as "same as last week's order". An LLM cannot handle it either, because the answer is in the customer's order history, not in the text. These lines go to a human, and using order history is left out of scope (section 5).
+The one kind of line embeddings cannot handle is a reference to a past order, such as "same as last week's order". An LLM cannot handle it either, because the answer is in the customer's order history, not in the text. These lines are abstained and go to a human.
 
 4. Failure Modes
 
@@ -129,4 +129,13 @@ Mechanism:
 - The hard-detail check is applied to fuzzy matches too, comparing whole numbers: 5 is not 15, so the line goes to a human.
 - Price check: if the line has a unit_price and it is far from the candidate's list_price, the line goes to a human.
 
-5.
+5. Boundary
+
+Out of scope for 3 days:
+1. Saving confirmed orders. When a reviewer confirms the right item for a line, that line and its item are saved, so the same line is recognised as an exact match next time. Failure mode 5 in section 4 describes the rules: only confirmed answers are saved, and a saved answer that causes a return or credit note is removed. Building this needs real reviewer decisions and return data, which do not exist yet.
+2. Quantity conversion. Stage 0 removes quantity and pack wording like "x24 ctn" so it does not confuse matching, but converting the ordered quantity into stock units using uom_reference is not built.
+3. The review process. When a line is abstained, the pipeline only hands it off to the review queue and records it. The review queue itself, and what the reviewer does with the line, is not part of this build.
+
+What we would need to see in production before building more:
+1. Request traffic. We need to know how many order lines arrive at the same time, including the peaks, such as busy hours or the end of the month when many customers order at once. We also need to know what share of those lines get as far as stage 3, because embeddings are the slowest stage and only the lines that fuzzy cannot resolve reach it, and how long the embedding stage takes per line when it is busy. Together these numbers decide the architecture, for example how many pods are needed so that a peak does not slow every order down.
+2. Embeddings accuracy. Embeddings are kept because they should resolve lines that fuzzy cannot, but they also add their own mistakes. To measure this safely, the embedding stage first runs in shadow mode: it still runs on every line that reaches stage 3 and records the item it would have picked, but its answer is not used, and the line goes to a human as if embeddings were not there. Comparing what embeddings would have picked with what the reviewer actually chose shows how often they are right, without any wrong item being shipped. Using the costs from section 1, a correct answer gains 60 seconds compared with sending the line to a human (+20 instead of -40), while a wrong answer loses 760 (-800 instead of -40), so one mistake cancels out about 12.7 correct answers, the same ratio as the precision constraint in section 1. Only if shadow mode shows embeddings staying above that ratio are their answers switched on. If not, the stage is removed.
