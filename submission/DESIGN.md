@@ -48,6 +48,7 @@ Every later stage works on the cleaned line.
 
 Stage 1: Regex (deterministic)
 Looks for an exact item name, SKU code or barcode in the line. If something is captured, it is looked up in the tenant's catalogue CSV. If regex finds nothing, the line is passed to fuzzy matching.
+A buyer's own SKU is looked up in the buyer SKU map for that tenant and that customer only. Mappings whose end date (valid_to) is before the order date are ignored, because some customers' numbers were moved to a different item. In this data every end date (2026-03-31) is before every order (from 2026-04-01), so any mapping with an end date is skipped when the map is loaded. In production this would be checked against each order's date instead. Which mappings are trusted is described in failure mode 5 (section 4).
 
 Stage 2: Fuzzy matching (deterministic)
 Compares the whole sentence against the tenant's catalogue. It always returns a best candidate with a confidence score, and the score falls into one of three zones (below).
@@ -119,8 +120,8 @@ Mechanism: the scores are calibrated on the labelled data, as in section 3, so t
 5. A wrong match is saved and repeated
 Example: the system wrongly matches "Hitex cable tie 150mm" to a Tolsen cable tie and saves it as a mapping. Next time the same line comes in, it is found as an exact match and sent again with full confidence.
 Mechanism:
-- Only mappings with source confirmed_order or manual_import are trusted for auto-answering.
-- inferred_match mappings are guesses, so those lines go to a human, with the guessed item shown as a suggestion.
+- Assumption: mappings with source confirmed_order or manual_import are treated as accurate regardless of their confidence value, once expired mappings are removed (see section 2).
+- inferred_match mappings are guesses. If the confidence is 1.0, the buyer's SKU is replaced with the mapped item code. If it is below 1.0, the link is not trusted: the buyer's SKU is replaced with the mapping's description instead, and that text goes through fuzzy matching and embeddings like the rest of the line, so related items can still be suggested.
 - New mappings are only saved after a person confirms them, for example when a reviewer picks the item in the review queue. A mapping is removed if it causes a return or a credit note.
 
 6. A typo makes the item name come out wrong

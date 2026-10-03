@@ -1,0 +1,7 @@
+[project]
+name = "mindhive"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "rapidfuzz>=3.14.6",
+]
