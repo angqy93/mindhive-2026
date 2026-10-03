@@ -42,7 +42,7 @@ Before searching, two kinds of catalogue rows are removed:
 
 Stage 0: Normalization (deterministic)
 Before any matching, the line is cleaned:
-- Abbreviations are expanded first, using a short hand-written list, for example S/S and SS304 to stainless steel, and ZP to zinc plated. This comes first because S/S contains a slash and would be lost if symbols were removed first.
+- Abbreviations are expanded first, using a short hand-written list, for example S/S and SS304 to stainless steel, and ZP to zinc plated. This comes first because S/S contains a slash and would be lost if symbols were removed first. An abbreviation is only expanded when it is not touching other letters, so "pls/send" is not changed.
 - Slashes used as word separators are turned into spaces, for example "Kanto/Self/Drilling/Screw". Symbols that carry meaning are kept: " for inches, # for screw sizes, fractions like 3/4, and x in dimensions like M8x75.
 Every later stage works on the cleaned line.
 
@@ -96,6 +96,37 @@ We do not use an LLM. The reasons:
 
 The one kind of line embeddings cannot handle is a reference to a past order, such as "same as last week's order". An LLM cannot handle it either, because the answer is in the customer's order history, not in the text. These lines go to a human, and using order history is left out of scope (section 5).
 
-4.
+4. Failure Modes
+
+These are the six most expensive ways the system can be confidently wrong on this data, meaning it auto-answers and the answer is wrong.
+
+1. A quantity is read as part of the product name
+Example: in "x24 ctn" the 24 is a quantity or pack size, but it can be mistaken for part of a name like "Beef Patty 24s".
+Mechanism: in stage 0, a list of unit words (ctn, carton, case, box, pcs, nos) and the "x + number" pattern are used to take these out of the text used for matching. "x + number" is only removed when it is at the end of the line or followed by a unit word. It is kept when it is followed by an inch mark (x 2") or sits between two numbers (M8x75), because then it is a spec. The real order quantity is already in the line's qty and uom_text columns.
+
+2. Embeddings do not recognise the brand
+Example: a "Hitex cable tie" line is matched to a Tolsen cable tie, because embeddings judge overall meaning.
+Mechanism: the hard-detail check from section 3. If the line names a brand, the candidate must contain it, otherwise the line goes to a human.
+
+3. Abbreviations are missing from the list or expanded in the wrong place
+Example: SDS is mentioned in the brief but is not in the list yet, and "pls/send" contains "s/s" across two words.
+Mechanism: an abbreviation is only expanded when it is not touching other letters on either side (a space, slash, dash, or the start or end of the line), and the abbreviation list is extended when new ones are found in the order lines.
+
+4. Over-reliance on confidence scores
+Example: the design trusts that a score of 92.7% or above means the answer is right. If the scores are not honest, every auto-answer is overconfident at the same time.
+Mechanism: the scores are calibrated on the labelled data, as in section 3, so that 92.7% really means 92.7% correct.
+
+5. A wrong match is saved and repeated
+Example: the system wrongly matches "Hitex cable tie 150mm" to a Tolsen cable tie and saves it as a mapping. Next time the same line comes in, it is found as an exact match and sent again with full confidence.
+Mechanism:
+- Only mappings with source confirmed_order or manual_import are trusted for auto-answering.
+- inferred_match mappings are guesses, so those lines go to a human, with the guessed item shown as a suggestion.
+- New mappings are only saved after a person confirms them, for example when a reviewer picks the item in the review queue. A mapping is removed if it causes a return or a credit note.
+
+6. A typo makes the item name come out wrong
+Example: "Hitex PVCP ipe1 5mm Class E", where the correct item is 15mm but the typo leaves "5mm". If fuzzy cannot resolve the line at all, it moves on safely. The danger is when the typo still looks like a real item and fuzzy gives it a high score.
+Mechanism:
+- The hard-detail check is applied to fuzzy matches too, comparing whole numbers: 5 is not 15, so the line goes to a human.
+- Price check: if the line has a unit_price and it is far from the candidate's list_price, the line goes to a human.
 
 5.
