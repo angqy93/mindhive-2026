@@ -41,9 +41,13 @@ Before searching, two kinds of catalogue rows are removed:
 - Old items, with codes ending in -OLD and marked disabled. They have been replaced, so they are dropped. If a buyer's SKU still points to an old item, the match is switched to its replacement, which has the same code without -OLD.
 
 Stage 0: Normalization (deterministic)
-Before any matching, the line is cleaned:
-- Abbreviations are expanded first, using a short hand-written list, for example S/S and SS304 to stainless steel, and ZP to zinc plated. This comes first because S/S contains a slash and would be lost if symbols were removed first. An abbreviation is only expanded when it is not touching other letters, so "pls/send" is not changed.
-- Slashes used as word separators are turned into spaces, for example "Kanto/Self/Drilling/Screw". Symbols that carry meaning are kept: " for inches, # for screw sizes, fractions like 3/4, and x in dimensions like M8x75.
+Before any matching, the line is lowercased and cleaned using four short lists, all taken from words that actually appear in the order lines:
+- Abbreviations are expanded: S/S to stainless, ZP to zinc plated, FC to full cream, and "inch" to ". SS304 is left as it is, because the catalogue itself writes SS304 in many item names.
+- Known Malay words are translated into English, for example skru to screw, susu to milk, paip to pipe, pita to tape, mentega to butter and "topi keledar" to helmet.
+- Known filler words used by customers are removed: pls, please, need, send, item, kindly, thanks, bro and urgent.
+- Quantity and packing words are removed: ctn, carton, case, box, pack and pkt, plus an "x + number" left at the end of the line (see failure mode 1 in section 4). "kg" is not removed, because it is part of item names such as "Prawn 1kg".
+Separators become spaces: slashes and spaced dashes used between words ("Kanto/Self/Drilling/Screw", "KANTO - SELF - DRILLING"), colons ("item:") and list numbering at the start ("1)"). Symbols that carry meaning are kept: " for inches (two single quotes '' are turned into "), # for screw sizes, fractions like 3/4, ranges like 19-25mm, and x in dimensions like M8x75.
+A missed abbreviation, Malay word or filler word is not dangerous: it only lowers the fuzzy score, so the line moves on to embeddings or a human. The lists are a shortcut for words already seen, not a complete dictionary.
 Every later stage works on the cleaned line.
 
 Stage 1: Regex (deterministic)
@@ -72,12 +76,12 @@ Regex is fast and needs very little computation. Embeddings need more calculatio
 
 Why unsure goes to a human and failure goes to embeddings:
 If fuzzy is unsure, it has already found similar words, so embeddings would most likely find the same candidates. Running them would be extra work with no benefit.
-If the fuzzy score is very low, the words in the line do not overlap with the catalogue at all, for example a Malay word like "susu" for milk. Fuzzy compares characters, so it cannot connect these. Embeddings compare meaning, so this is where they can still find a match.
+If the fuzzy score is very low, the words in the line do not overlap with the catalogue at all, for example a Malay word that is not in the stage 0 list. Fuzzy compares characters, so it cannot connect these. Embeddings compare meaning, so this is where they can still find a match.
 
 3. Where an LLM or Embeddings Earn Their Place
 
 Embeddings:
-Embeddings are used in one place only: stage 3 of the pipeline. The cheaper methods are tried first: regex for exact codes and names, then fuzzy matching for typos. Embeddings only run when fuzzy finds no overlap in words. That is where they add something, because they compare meaning and can match a line written with different words. We use a multilingual local model, so it understands Malay and English together, for example "skru" for screw and "susu" for milk. Trade abbreviations such as S/S and ZP are already expanded in stage 0, so the model does not need to know them.
+Embeddings are used in one place only: stage 3 of the pipeline. The cheaper methods are tried first: regex for exact codes and names, then fuzzy matching for typos. Embeddings only run when fuzzy finds no overlap in words. That is where they add something, because they compare meaning and can match a line written with different words. The Malay words already seen in the order lines (such as "skru" for screw and "susu" for milk) are translated in stage 0. We use a multilingual local model, so Malay words that are not on that list are still understood. Trade abbreviations such as S/S and ZP are also expanded in stage 0, so the model does not need to know them.
 
 Fallback when the model is unavailable or slow:
 The model runs locally, so outages are rare, but it can still fail to load or run out of memory. If the embedding stage errors, or takes longer than a set time limit, the line is sent to a human.
@@ -103,7 +107,7 @@ These are the six most expensive ways the system can be confidently wrong on thi
 
 1. A quantity is read as part of the product name
 Example: in "x24 ctn" the 24 is a quantity or pack size, but it can be mistaken for part of a name like "Beef Patty 24s".
-Mechanism: in stage 0, a list of unit words (ctn, carton, case, box, pcs, nos) and the "x + number" pattern are used to take these out of the text used for matching. "x + number" is only removed when it is at the end of the line or followed by a unit word. It is kept when it is followed by an inch mark (x 2") or sits between two numbers (M8x75), because then it is a spec. The real order quantity is already in the line's qty and uom_text columns.
+Mechanism: in stage 0, a list of unit words (ctn, carton, case, box, pack, pkt) and the "x + number" pattern are used to take these out of the text used for matching. "x + number" is only removed when it is at the end of the line or followed by a unit word. It is kept when it is followed by an inch mark (x 2") or sits between two numbers (M8x75), because then it is a spec. The real order quantity is already in the line's qty and uom_text columns.
 
 2. Embeddings do not recognise the brand
 Example: a "Hitex cable tie" line is matched to a Tolsen cable tie, because embeddings judge overall meaning.
