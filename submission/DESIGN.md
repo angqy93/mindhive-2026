@@ -61,7 +61,7 @@ Stage 3: Embeddings (probabilistic)
 Only runs when the fuzzy score is in the failure zone. It also returns a best candidate with a confidence score.
 
 Unique Item Names:
-No two items have exactly the same name. Some names have the same text but a different number at the end, and that number is a different spec, for example "Sisu Beef Patty 150g 12s", "24s" and "48s". A few use "(Bulk)" at the end in the same way, such as "Vermont PVC Pipe 50mm Class D (Bulk)". If the line includes that number, it is used to pick the right item. If the line leaves it out, several items match equally well, so the line is sent to a human.
+No two items have exactly the same name. Some names have the same text but a different number at the end, and that number is a different spec, for example "Sisu Beef Patty 150g 12s", "24s" and "48s". A few use "(Bulk)" at the end in the same way, such as "Vermont PVC Pipe 50mm Class D (Bulk)". If the line includes that number, it is used to pick the right item. If the line leaves it out, several items match equally well, so the line is sent to a human. This also applies to exact name matches: if other items extend the matched name (for example with "(Bulk)"), the line goes to a human with all of them as candidates.
 
 Confidence zones:
 - Success (92.7% and above): fuzzy returns the answer; embeddings return the answer.
