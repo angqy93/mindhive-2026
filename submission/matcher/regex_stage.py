@@ -1,10 +1,16 @@
 """Stage 1: exact lookups by barcode, buyer SKU and item name. See DESIGN.md section 2."""
+import re
 from dataclasses import dataclass
+
+from rapidfuzz import fuzz
 
 from .data import CustomerKey, Item, SkuMapping
 from .normalize import normalize
 
 TRUSTED_SOURCES = ("confirmed_order", "manual_import")
+
+# A barcode typed inside the text: a run of 8 to 14 digits (EAN-8 up to GTIN-14).
+EMBEDDED_BARCODE = re.compile(r"(?<!\d)\d{8,14}(?!\d)")
 
 
 @dataclass(frozen=True)
@@ -13,7 +19,7 @@ class RegexResult:
     reason: str | None      # "barcode_hit", "sku_map_hit", "name_exact" or "ambiguous_twins"
     decision: str | None    # "auto" or "review", None when nothing was found
     text: str               # cleaned line text, handed to fuzzy matching if nothing was found
-    candidates: tuple[str, ...] = ()  # the items a reviewer chooses between, for "review"
+    candidates: tuple[tuple[str, float], ...] = ()  # (item_code, score) a reviewer chooses between, for "review"
 
 
 def is_trusted(mapping: SkuMapping) -> bool:
@@ -30,15 +36,17 @@ class RegexStage:
         self.catalogue = catalogue
         self.sku_map = sku_map
         self.barcodes = {item.barcode: code for code, item in catalogue.items() if item.barcode}
-        self.names = {normalize(item.item_name): code for code, item in catalogue.items()}
+        self.cleaned = {code: normalize(item.item_name) for code, item in catalogue.items()}
+        self.names = {name: code for code, name in self.cleaned.items()}
 
     def match(self, line: dict) -> RegexResult:
         text = line["raw_text"]
 
-        # 1. Barcode.
-        item_code = self.barcodes.get(line["raw_barcode"].strip())
-        if item_code:
-            return RegexResult(item_code, "barcode_hit", "auto", normalize(text))
+        # 1. Barcode: the barcode field first, then any barcode typed inside the text.
+        for barcode in (line["raw_barcode"].strip(), *EMBEDDED_BARCODE.findall(text)):
+            item_code = self.barcodes.get(barcode)
+            if item_code:
+                return RegexResult(item_code, "barcode_hit", "auto", normalize(text))
 
         # 2. Buyer SKU, looked up in this customer's own map only.
         customer_skus = self.sku_map.get((self.tenant, line["customer_id"]), {})
@@ -56,7 +64,8 @@ class RegexStage:
             variants = [code for name, code in self.names.items() if name.startswith(cleaned + " ")]
             if variants:
                 # Other items extend this name (e.g. "(Bulk)"), and the line doesn't say which one.
-                return RegexResult(item_code, "ambiguous_twins", "review", cleaned, (item_code, *variants))
+                scored = tuple((code, fuzz.ratio(cleaned, self.cleaned[code])) for code in (item_code, *variants))
+                return RegexResult(item_code, "ambiguous_twins", "review", cleaned, scored)
             return RegexResult(item_code, "name_exact", "auto", cleaned)
 
         return RegexResult(None, None, None, cleaned)

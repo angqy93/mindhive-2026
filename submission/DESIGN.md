@@ -36,6 +36,9 @@ The project manager decides the coverage, meaning how much of the work should be
 
 Every search only looks in the catalogue of the line's own tenant. Frozen food and hardware are completely separate, so a line can never be matched to the other tenant's items.
 
+New tenant (cold start):
+A new tenant only needs its catalogue. The matcher loads every tenant's catalogue the same way, so all the stages (barcode, exact name, fuzzy and embeddings) work for it from day one. The difference is the buyer SKU lookup: a new tenant has no SKU map yet, so that lookup finds nothing, and more of its lines go to fuzzy matching or to a human. As reviewers confirm items, the SKU map builds up and the tenant behaves more like a mature one. On the training lines, the SKU map gave 63 of the 309 automatic answers.
+
 Before searching, two kinds of catalogue rows are removed:
 - Junk rows: DELIVERY FEE, MISC CHARGE, OPENING BALANCE and SAMPLE - DO NOT SELL. Their codes contain MISC, they have empty fields and a price of 0, and they are not real products, so they are dropped. A line that only says something like "delivery fee" is not a product order, so it should never be matched to an item.
 - Old items, with codes ending in -OLD and marked disabled. They have been replaced, so they are dropped. If a buyer's SKU still points to an old item, the match is switched to its replacement, which has the same code without -OLD.
@@ -52,6 +55,7 @@ Every later stage works on the cleaned line.
 
 Stage 1: Regex (deterministic)
 Looks for an exact item name, SKU code or barcode in the line. If something is captured, it is looked up in the tenant's catalogue CSV. If regex finds nothing, the line is passed to fuzzy matching.
+A barcode is taken from the barcode field first, then from any 8 to 14 digit number typed inside the line, so a barcode pasted into the text is still captured.
 A buyer's own SKU is looked up in the buyer SKU map for that tenant and that customer only. Mappings whose end date (valid_to) is before the order date are ignored, because some customers' numbers were moved to a different item. In this data every end date (2026-03-31) is before every order (from 2026-04-01), so any mapping with an end date is skipped when the map is loaded. In production this would be checked against each order's date instead. Which mappings are trusted is described in failure mode 5 (section 4).
 
 Stage 2: Fuzzy matching (deterministic)
@@ -62,7 +66,7 @@ Fuzzy always finds look-alikes, so two checks send the line to a human even when
 If neither check fails, the score falls into one of three zones (below).
 
 Stage 3: Embeddings (probabilistic)
-Only runs when the fuzzy score is in the failure zone. It also returns a best candidate with a confidence score.
+Only runs when the fuzzy score is in the failure zone. It returns its top 3 candidates as suggestions for the reviewer, and only answers on its own once it reaches the 92.7% success line (section 3).
 
 Unique Item Names:
 No two items have exactly the same name. Some names have the same text but a different number at the end, and that number is a different spec, for example "Sisu Beef Patty 150g 12s", "24s" and "48s". A few use "(Bulk)" at the end in the same way, such as "Vermont PVC Pipe 50mm Class D (Bulk)". If the line includes that number, it is used to pick the right item. If the line leaves it out, several items match equally well, so the line is sent to a human. This also applies to exact name matches: if other items extend the matched name (for example with "(Bulk)"), the line goes to a human with all of them as candidates.
@@ -89,10 +93,12 @@ Embeddings:
 Embeddings are used in one place only: stage 3 of the pipeline. The cheaper methods are tried first: regex for exact codes and names, then fuzzy matching for typos. Embeddings only run when fuzzy finds no overlap in words. That is where they add something, because they compare meaning and can match a line written with different words. The Malay words already seen in the order lines (such as "skru" for screw and "susu" for milk) are translated in stage 0. We use a multilingual local model, so Malay words that are not on that list are still understood. Trade abbreviations such as S/S and ZP are also expanded in stage 0, so the model does not need to know them.
 
 Fallback when the model is unavailable or slow:
-The model runs locally, so outages are rare, but it can still fail to load or run out of memory. If the embedding stage errors, or takes longer than a set time limit, the line is sent to a human.
+The model runs locally, so outages are rare, but it can still fail to load or run out of memory. If the embedding stage errors, or the model is not on the machine, the line is sent to a human.
+There is no time limit per line. A limit would make the answer depend on how fast the machine is, and the matcher must give the same answer for the same input. Instead, the time per line is measured and reported, and checked against the 250 ms budget.
 
 When the model is wrong:
-- Calibrate the score. An embedding's similarity score is not a probability. Using the labelled data, we check how often each score level is actually right, and the 92.7% rule from section 1 is applied to that measured figure, not to the raw score.
+- Calibrate the score. An embedding's similarity score is not a probability. Using the labelled data, we check how often each score level is actually right, and the 92.7% rule from section 1 is applied to that measured figure, not to the raw score. Until the labelled answers prove it, embeddings never answer on their own: even with every answer right, it takes 35 of them before the lower bound clears 92.7%. The training lines have none, so for now embeddings only suggest candidates.
+- Word check. As in fuzzy, if more than one catalogue item contains every word of the line, the line goes to a human. For example "40mm class" fits 23 pipes of different brands and classes.
 - Gap check. If the best and second-best candidates score almost the same, the model cannot tell them apart, so the line goes to a human, even if the top score is high.
 - Hard-detail check. If the line names a brand or a size, the candidate must contain them too. Embeddings judge overall meaning, so they can pick the wrong brand or size, and a simple text check catches this.
 - The unique item names rule from section 2 applies here too. Embeddings cannot tell specs apart well, so if the number is missing from the line, it goes to a human.
