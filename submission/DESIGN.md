@@ -55,7 +55,11 @@ Looks for an exact item name, SKU code or barcode in the line. If something is c
 A buyer's own SKU is looked up in the buyer SKU map for that tenant and that customer only. Mappings whose end date (valid_to) is before the order date are ignored, because some customers' numbers were moved to a different item. In this data every end date (2026-03-31) is before every order (from 2026-04-01), so any mapping with an end date is skipped when the map is loaded. In production this would be checked against each order's date instead. Which mappings are trusted is described in failure mode 5 (section 4).
 
 Stage 2: Fuzzy matching (deterministic)
-Compares the whole sentence against the tenant's catalogue. It always returns a best candidate with a confidence score, and the score falls into one of three zones (below).
+Compares the cleaned line against every cleaned item name in the tenant's catalogue using rapidfuzz's ratio score (characters in common, in order, compared with the length of both texts), and keeps the top 3. Plain ratio was chosen after testing four scorers on the training lines: it picked the right item most often and gave the fewest high scores to lines that should be abstained. Scorers that ignore extra words gave vague lines like "kanto" a perfect score against any Kanto item.
+Fuzzy always finds look-alikes, so two checks send the line to a human even when the top score is high:
+- Gap check: the second-best candidate is within 1 point of the best. Typos that change a number create exactly this kind of tie, for example "3700mm" scores the same against the 300mm and 370mm cable ties.
+- Word check: more than one catalogue item contains every word of the line, for example "Tolsen Hex Bolt M8x50" fits the HDG, Zinc Plated, Stainless 304 and Stainless 316 versions. The ratio score alone misses this, because longer names score lower even when they fit the line just as well.
+If neither check fails, the score falls into one of three zones (below).
 
 Stage 3: Embeddings (probabilistic)
 Only runs when the fuzzy score is in the failure zone. It also returns a best candidate with a confidence score.
@@ -69,6 +73,7 @@ Confidence zones:
 - Failure: fuzzy passes the line to embeddings; embeddings send the line to a human.
 
 The success zone starts at 92.7% because of the break-even in section 1: below that, sending the line to a human saves more time.
+92.7% is a precision, not a raw score, so the raw score that delivers it is measured on the training lines. For fuzzy, the success line is the lowest ratio score at which a 95% lower bound on precision (for fuzzy answers that pass both checks) still clears 92.7%. On the training lines that is 70: 67 answers, 66 of them correct, with a lower bound of 93.6%. The lower bound accounts for the small sample, so a cut-off backed by fewer answers needs to look better to qualify. This is re-measured in Task 3.
 The line between unsure and failure is not fixed yet. Once the matcher exists, we build an ROC curve from the data, and the team (project manager, customer's manager and engineer, as in section 1) decides where to place it.
 
 Why this order:
@@ -129,10 +134,9 @@ Mechanism:
 - New mappings are only saved after a person confirms them, for example when a reviewer picks the item in the review queue. A mapping is removed if it causes a return or a credit note.
 
 6. A typo makes the item name come out wrong
-Example: "Hitex PVCP ipe1 5mm Class E", where the correct item is 15mm but the typo leaves "5mm". If fuzzy cannot resolve the line at all, it moves on safely. The danger is when the typo still looks like a real item and fuzzy gives it a high score.
-Mechanism:
-- The hard-detail check is applied to fuzzy matches too, comparing whole numbers: 5 is not 15, so the line goes to a human.
-- Price check: if the line has a unit_price and it is far from the candidate's list_price, the line goes to a human.
+Example: "Tolsen Cablle Tie 3700mm White", where the correct item is 370mm. If fuzzy cannot resolve the line at all, it moves on safely. The danger is when the typo still looks like a real item and fuzzy gives it a high score.
+Mechanism: the gap check in stage 2. A typo that changes a number makes several sizes score the same ("3700mm" ties 300mm and 370mm; "05mm" ties 15, 20, 25 and 40mm), so the line goes to a human.
+A whole-number check was also tested on the training lines and dropped: every bad answer it caught was already caught by the gap check, and on its own it sent 7 correct answers to review (for example "16/0" for 16/20). A price check was not added: after the gap and word checks, the only bad high-scoring answer left on the training lines is one we believe is mislabelled, so there was nothing left for it to catch.
 
 5. Boundary
 
