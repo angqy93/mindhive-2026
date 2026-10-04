@@ -12,6 +12,9 @@ The brief is the `README.md` at the repo root. Everything I built is in this `su
 | `matcher/` | Task 2 matcher (stages 0 to 3, decision step, calibration) |
 | `run.py` | Builds the matcher, learns from the labelled lines, writes `predictions.csv` |
 | `build_model.py` | One-time build step: puts the pinned embedding model in the local cache |
+| `EVAL.md` | Task 3: harness, metrics, error analysis, label problem, regression safety |
+| `evaluate.py` | Task 3 harness: scores the matcher on the labelled training lines (`uv run python submission/evaluate.py`) |
+| `segments.py` | The noise groups used by the harness |
 | `tests/` | pytest tests |
 | `data/order_lines_train_corrected.csv` | The training lines with 23 labels corrected (see below) |
 
