@@ -16,6 +16,11 @@ The brief is the `README.md` at the repo root. Everything I built is in this `su
 | `evaluate.py` | Task 3 harness: scores the matcher on the labelled training lines (`uv run python submission/evaluate.py`) |
 | `segments.py` | The noise groups used by the harness |
 | `eval_baseline.json` | The last accepted run, used by the harness's regression gates |
+| `PERF.md` | Task 4: estimated baseline, diagnosis, fix, `p95_latency_ms`, what was not fixed, trade-offs, ceiling |
+| `perf/report_fast.sql` | Task 4 fix: the report rewritten, with the new `p95_latency_ms` column |
+| `perf/check_p95.py` | Checks `p95_latency_ms` against a plain nearest-rank p95 computed in Python |
+| `perf/slices.py` | Times slices of the original report query (one tenant, one channel, a date range, columns removed) |
+| `perf/ablate.py` | Ablation of the original query: removes one column at a time and re-measures |
 | `tests/` | pytest tests |
 | `data/order_lines_train_corrected.csv` | The training lines with 23 labels corrected (see below) |
 
@@ -43,6 +48,24 @@ uv run python submission/evaluate.py
 
 `run.py` prints whether the embedding model was found, the number of auto / review / reject decisions, and the time per line (median, p95, max).
 
+### Task 4
+
+Build the database (about 120 MB, not committed; same seed, same database), then check the fix against the shipped reference result:
+
+```bash
+cd starter && uv run python make_perf_db.py --out ../data/perf.sqlite
+```
+
+```bash
+cd starter && uv run python bench_report.py check --db ../data/perf.sqlite --sql ../submission/perf/report_fast.sql --repeat 5 --budget-s 10
+```
+
+```bash
+uv run python submission/perf/check_p95.py
+```
+
+Do not run `starter/report_query.sql` over the full window: it is estimated at about 75 hours on the machine used here (PERF.md section 1). `perf/slices.py` times small slices of it instead.
+
 ### Embedding model
 
 Stage 3 uses `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`, pinned to revision `e8f8c211226b894fcb81acc59f3b34ba3efd5f42`. The matcher only loads it from the local Hugging Face cache and never calls the network. It has to be in the cache before running. This one-time build step is the only part that needs internet:
@@ -55,8 +78,9 @@ If the model is not there, the matcher still runs, without stage 3: those lines 
 
 ## Assumptions and problems found in the brief and data
 
-- **Training labels.** 22 training lines whose text is exactly an item name are labelled blank (abstain), and so is `ACM-T-0114`, whose text leaves out only "410" although Stallion sells one stainless #10 x 1" self drilling screw. I believe these are label errors. The original file is untouched. Corrected labels are in `data/order_lines_train_corrected.csv`, and that is what the matcher learns from. Task 3 will report results against both label sets.
+- **Training labels.** 22 training lines whose text is exactly an item name are labelled blank (abstain), and so is `ACM-T-0114`, whose text leaves out only "410" although Stallion sells one stainless #10 x 1" self drilling screw. I believe these are label errors. The original file is untouched. Corrected labels are in `data/order_lines_train_corrected.csv`, and that is what the matcher learns from. Task 3 reports results against both label sets.
 - **Expired SKU mappings.** Every `valid_to` in `customer_sku_map.csv` is 2026-03-31 and every order is from 2026-04-01 on, so any mapping with an end date is skipped when the map is loaded. In production this would be a per-order date check.
+- **Impossible dates in the Task 4 data.** The generated timestamps include days that do not exist, such as 2026-04-31 and 2026-06-31. The rewrite keeps the original query's behaviour for them exactly (PERF.md section 3).
 - **"Assume a clean machine, `python3` only."** The matcher uses packages allowed by §5.2 (rapidfuzz, scikit-learn, numpy, sentence-transformers), so it needs uv (or pip) to install them.
 
 ## Status
@@ -64,7 +88,8 @@ If the model is not there, the matcher still runs, without stage 3: those lines 
 - Task 1 (`DESIGN.md`): done.
 - Task 2 (matcher, `predictions.csv`): done.
 - Task 3 (`EVAL.md`, `evaluate.py`): done.
-- Tasks 4 to 6: not done yet.
+- Task 4 (`PERF.md`, `perf/report_fast.sql`): done.
+- Tasks 5 and 6: not done yet.
 
 ## Tool attribution
 
