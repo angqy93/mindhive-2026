@@ -14,3 +14,6 @@ data/perf.sqlite
 
 # Decision log: kept local until all tasks are done
 submission/DECISIONS.md
+
+# Temporary working files
+failures_original_labels.txt

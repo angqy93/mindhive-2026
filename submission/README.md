@@ -15,6 +15,7 @@ The brief is the `README.md` at the repo root. Everything I built is in this `su
 | `EVAL.md` | Task 3: harness, metrics, error analysis, label problem, regression safety |
 | `evaluate.py` | Task 3 harness: scores the matcher on the labelled training lines (`uv run python submission/evaluate.py`) |
 | `segments.py` | The noise groups used by the harness |
+| `eval_baseline.json` | The last accepted run, used by the harness's regression gates |
 | `tests/` | pytest tests |
 | `data/order_lines_train_corrected.csv` | The training lines with 23 labels corrected (see below) |
 
@@ -34,6 +35,12 @@ uv run python submission/run.py
 uv run pytest
 ```
 
+```bash
+uv run python submission/evaluate.py
+```
+
+`evaluate.py` is the Task 3 harness. It scores the matcher on the labelled training lines (original and corrected labels, 5-fold), prints the metrics per tenant and per noise group, the precision vs coverage curve and the time per line, and ends with the regression gates: it exits with code 1 if a gate fails. Add `--no-embeddings` to run it without the embedding stage.
+
 `run.py` prints whether the embedding model was found, the number of auto / review / reject decisions, and the time per line (median, p95, max).
 
 ### Embedding model
@@ -48,7 +55,7 @@ If the model is not there, the matcher still runs, without stage 3: those lines 
 
 ## Assumptions and problems found in the brief and data
 
-- **Training labels.** 22 training lines whose text is exactly an item name are labelled blank (abstain), and `ACM-T-0114` points to a different item than its text names. I believe these are label errors. The original file is untouched. Corrected labels are in `data/order_lines_train_corrected.csv`, and that is what the matcher learns from. Task 3 will report results against both label sets.
+- **Training labels.** 22 training lines whose text is exactly an item name are labelled blank (abstain), and so is `ACM-T-0114`, whose text leaves out only "410" although Stallion sells one stainless #10 x 1" self drilling screw. I believe these are label errors. The original file is untouched. Corrected labels are in `data/order_lines_train_corrected.csv`, and that is what the matcher learns from. Task 3 will report results against both label sets.
 - **Expired SKU mappings.** Every `valid_to` in `customer_sku_map.csv` is 2026-03-31 and every order is from 2026-04-01 on, so any mapping with an end date is skipped when the map is loaded. In production this would be a per-order date check.
 - **"Assume a clean machine, `python3` only."** The matcher uses packages allowed by §5.2 (rapidfuzz, scikit-learn, numpy, sentence-transformers), so it needs uv (or pip) to install them.
 
@@ -56,7 +63,8 @@ If the model is not there, the matcher still runs, without stage 3: those lines 
 
 - Task 1 (`DESIGN.md`): done.
 - Task 2 (matcher, `predictions.csv`): done.
-- Tasks 3 to 6: not done yet.
+- Task 3 (`EVAL.md`, `evaluate.py`): done.
+- Tasks 4 to 6: not done yet.
 
 ## Tool attribution
 

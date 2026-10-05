@@ -27,7 +27,9 @@ class FuzzyResult:
 class FuzzyStage:
     """Built once per tenant, then used for every line that stage 1 could not resolve."""
 
-    def __init__(self, catalogue: dict[str, Item]):
+    def __init__(self, catalogue: dict[str, Item], success_score: float = SUCCESS_SCORE):
+        # Only the evaluation harness changes this, to re-test the line (EVAL.md section 1).
+        self.success_score = success_score
         self.names = {code: normalize(item.item_name) for code, item in catalogue.items()}
         self.words = {code: set(name.split()) for code, name in self.names.items()}
 
@@ -39,7 +41,7 @@ class FuzzyStage:
         candidates = tuple((code, score) for _, score, code in top)
         best_code, best_score = candidates[0]
 
-        if best_score < SUCCESS_SCORE:
+        if best_score < self.success_score:
             return FuzzyResult(best_code, "fuzzy_low_score", None, best_score, candidates)
 
         # Word check: more than one item contains every word of the line.
