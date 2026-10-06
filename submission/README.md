@@ -24,6 +24,7 @@ The brief is the `README.md` at the repo root. Everything I built is in this `su
 | `SYNC.md` | Task 5: the sync defects, fixes and invariants, the vendor contract we would ask for, what breaks at scale |
 | `sync/sync_adapter.py` | Task 5 fix: the ERP sync adapter, same functions as `starter/sync/sync_adapter.py` |
 | `sync/check_isolation.py` | Undoes each sync fix on its own and shows which test fails |
+| `SCALE.md` | Task 6: scale and rollout |
 | `tests/` | pytest tests (including `test_sync.py`, one test per sync defect) |
 | `data/order_lines_train_corrected.csv` | The training lines with 23 labels corrected (see below) |
 
@@ -105,7 +106,7 @@ If the model is not there, the matcher still runs, without stage 3: those lines 
 - Task 3 (`EVAL.md`, `evaluate.py`): done.
 - Task 4 (`PERF.md`, `perf/report_fast.sql`): done.
 - Task 5 (`SYNC.md`, `sync/sync_adapter.py`, `tests/test_sync.py`): done.
-- Task 6: not done yet.
+- Task 6 (`SCALE.md`): done.
 
 ## Tool attribution
 
