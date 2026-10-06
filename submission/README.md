@@ -21,7 +21,10 @@ The brief is the `README.md` at the repo root. Everything I built is in this `su
 | `perf/check_p95.py` | Checks `p95_latency_ms` against a plain nearest-rank p95 computed in Python |
 | `perf/slices.py` | Times slices of the original report query (one tenant, one channel, a date range, columns removed) |
 | `perf/ablate.py` | Ablation of the original query: removes one column at a time and re-measures |
-| `tests/` | pytest tests |
+| `SYNC.md` | Task 5: the sync defects, fixes and invariants, the vendor contract we would ask for, what breaks at scale |
+| `sync/sync_adapter.py` | Task 5 fix: the ERP sync adapter, same functions as `starter/sync/sync_adapter.py` |
+| `sync/check_isolation.py` | Undoes each sync fix on its own and shows which test fails |
+| `tests/` | pytest tests (including `test_sync.py`, one test per sync defect) |
 | `data/order_lines_train_corrected.csv` | The training lines with 23 labels corrected (see below) |
 
 ## How to run
@@ -66,6 +69,18 @@ uv run python submission/perf/check_p95.py
 
 Do not run `starter/report_query.sql` over the full window: it is estimated at about 75 hours on the machine used here (PERF.md section 1). `perf/slices.py` times small slices of it instead.
 
+### Task 5
+
+The sync tests run with the rest (`uv run pytest`). To see each of them fail on the original adapter, and which test each fix is responsible for:
+
+```bash
+SYNC_ADAPTER=original uv run pytest submission/tests/test_sync.py
+```
+
+```bash
+uv run python submission/sync/check_isolation.py
+```
+
 ### Embedding model
 
 Stage 3 uses `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`, pinned to revision `e8f8c211226b894fcb81acc59f3b34ba3efd5f42`. The matcher only loads it from the local Hugging Face cache and never calls the network. It has to be in the cache before running. This one-time build step is the only part that needs internet:
@@ -89,7 +104,8 @@ If the model is not there, the matcher still runs, without stage 3: those lines 
 - Task 2 (matcher, `predictions.csv`): done.
 - Task 3 (`EVAL.md`, `evaluate.py`): done.
 - Task 4 (`PERF.md`, `perf/report_fast.sql`): done.
-- Tasks 5 and 6: not done yet.
+- Task 5 (`SYNC.md`, `sync/sync_adapter.py`, `tests/test_sync.py`): done.
+- Task 6: not done yet.
 
 ## Tool attribution
 
